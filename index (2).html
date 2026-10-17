@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Familienportal</title>
+<style>
+:root{
+  --bg:#f6f4ef; --card:#ffffff; --ink:#1f2328; --muted:#6b6f76; --line:#e4e0d8;
+  --accent:#2f6f5e; --accent-ink:#ffffff; --warn:#b4472f; --soft:#e9f2ee; --soft-warn:#f8e9e4; --soft-info:#efece4;
+  --radius:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15171a; --card:#1e2125; --ink:#eceef0; --muted:#9aa0a6; --line:#2e3238;
+    --accent:#6fc1a8; --accent-ink:#0f1a16; --warn:#f08a70; --soft:#1f3029; --soft-warn:#3a2620; --soft-info:#26292d;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15171a; --card:#1e2125; --ink:#eceef0; --muted:#9aa0a6; --line:#2e3238;
+  --accent:#6fc1a8; --accent-ink:#0f1a16; --warn:#f08a70; --soft:#1f3029; --soft-warn:#3a2620; --soft-info:#26292d;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:16px 16px 48px}
+header h1{font-size:1.5rem;margin:8px 0 2px}
+header p{margin:0;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:12px 0}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding:12px 16px 4px;margin:0 -16px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:7px 14px;font-size:.95rem;cursor:pointer}
+.tab.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button{font:inherit;border:0;border-radius:10px;padding:10px 16px;background:var(--accent);color:var(--accent-ink);cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button.small{padding:6px 10px;font-size:.9rem}
+button.danger{background:transparent;color:var(--warn);border:1px solid var(--line)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+textarea{min-height:160px;resize:vertical}
+label{display:block;font-size:.85rem;color:var(--muted);margin:8px 0 4px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.muted{color:var(--muted)}
+.small-text{font-size:.9rem}
+.next{background:var(--soft);border-color:transparent}
+.day{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.day:last-child{border-bottom:0}
+.day .when{font-weight:600}
+.month-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.month-head h2{margin:0}
+.note{background:var(--soft-info);border-radius:10px;padding:8px 12px;margin:8px 0;font-size:.92rem}
+.badge{font-size:.78rem;border-radius:999px;padding:2px 8px;background:var(--soft);color:var(--accent);white-space:nowrap;align-self:center}
+.badge.off{background:var(--soft-warn);color:var(--warn)}
+.cancel .when,.cancel .time{text-decoration:line-through;color:var(--muted)}
+.contact h3{margin:0;font-size:1.05rem}
+.contact .role{color:var(--muted);font-size:.9rem;margin-bottom:6px}
+.contact a{color:var(--accent);text-decoration:none;display:inline-block;margin-right:14px}
+.md h3{font-size:1.05rem;margin:14px 0 4px}
+.md ul{margin:4px 0;padding-left:20px}
+.md p{margin:6px 0}
+.kv{display:grid;grid-template-columns:minmax(110px,38%) 1fr;gap:6px 12px}
+.kv div:nth-child(odd){color:var(--muted)}
+.kv div{word-break:break-word}
+.edit-item{border:1px dashed var(--line);border-radius:10px;padding:10px;margin:8px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.center{min-height:80vh;display:flex;align-items:center;justify-content:center}
+.login{width:100%;max-width:380px}
+.err{color:var(--warn);font-size:.9rem;min-height:1.2em}
+.ok{color:var(--accent);font-size:.9rem;min-height:1.2em}
+footer{margin-top:24px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+h2{font-size:1.15rem;margin:0 0 8px}
+</style>
+</head>
+<body>
+<div id="app" class="wrap"></div>
+<script>
+"use strict";
+const DATA_FILE = "data.enc.json";
+const ITER = 310000;
+const TAGE = ["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
+const te = new TextEncoder(), td = new TextDecoder();
+const app = document.getElementById("app");
+
+let encFile = null, data = null, password = null, view = "einsaetze", editing = false, setupMode = false, editMine = false;
+
+/* ---------- Helfer ---------- */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad = n => String(n).padStart(2,"0");
+const iso = d => d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const parse = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y,m-1,d); };
+const fmtDate = s => parse(s).toLocaleDateString("de-CH",{weekday:"long",day:"numeric",month:"long"});
+const fmtShort = s => parse(s).toLocaleDateString("de-CH",{day:"numeric",month:"numeric",year:"numeric"});
+const minutes = (a,b) => { if(!a||!b) return 0; const [h1,m1]=a.split(":").map(Number), [h2,m2]=b.split(":").map(Number); return Math.max(0,(h2*60+m2)-(h1*60+m1)); };
+const fmtHours = m => (Math.round(m/6)/10).toLocaleString("de-CH");
+function toB64(u8){ let s=""; for(let i=0;i<u8.length;i+=0x8000) s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); return btoa(s); }
+function fromB64(b){ const s=atob(b); const u=new Uint8Array(s.length); for(let i=0;i<s.length;i++) u[i]=s.charCodeAt(i); return u; }
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ v==null ? localStorage.removeItem(k) : localStorage.setItem(k,v); }catch(e){} }
+const digits = n => String(n||"").replace(/[^\d+]/g,"").replace(/^00/,"+");
+
+/* ---------- Verschlüsselung (AES-GCM, Schlüssel per PBKDF2) ---------- */
+async function deriveKey(pw, salt, iter){
+  const base = await crypto.subtle.importKey("raw", te.encode(pw), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2", salt, iterations:iter, hash:"SHA-256"}, base, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]);
+}
+async function encryptData(obj, pw){
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(pw, salt, ITER);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, te.encode(JSON.stringify(obj))));
+  return {v:1, iter:ITER, salt:toB64(salt), iv:toB64(iv), ct:toB64(ct)};
+}
+async function decryptData(file, pw){
+  const key = await deriveKey(pw, fromB64(file.salt), file.iter);
+  const pt = await crypto.subtle.decrypt({name:"AES-GCM", iv:fromB64(file.iv)}, key, fromB64(file.ct));
+  return JSON.parse(td.decode(pt));
+}
+
+/* ---------- Felder für «Meine Angaben» ---------- */
+const NANNY_FIELDS = [
+  {k:"name",l:"Name"},{k:"geburtsdatum",l:"Geburtsdatum"},{k:"adresse",l:"Adresse"},
+  {k:"telefon",l:"Telefon"},{k:"email",l:"E-Mail"},{k:"nationalitaet",l:"Nationalität"},
+  {k:"ahv",l:"AHV-Nummer"},{k:"iban",l:"IBAN"},
+  {k:"notfall_name",l:"Notfallkontakt"},{k:"notfall_bez",l:"Beziehung"},{k:"notfall_tel",l:"Telefon Notfallkontakt"},
+  {k:"weitere",l:"Weitere Anstellung"}
+];
+const MELDUNG_FIELDS = [
+  {k:"whatsapp",l:"WhatsApp-Nummer für Quittungen und Meldungen"},
+  {k:"email",l:"E-Mail für Quittungen und Meldungen"}
+];
+
+/* ---------- Vorlage (enthält bewusst keine persönlichen Daten, da öffentlich) ---------- */
+function template(){
+  return {
+    titel: "Infos für unsere Nanny", untertitel: "Alles Wichtige an einem Ort", start: "",
+    wochenplan: [], ausnahmen: [], ferien: [], kontakte: [],
+    abschnitte: [{titel:"Kinder", inhalt:"## Ablauf\n- …"}],
+    nanny: {}, meldung: {}, dokumente: []
+  };
+}
+function normalize(d){
+  for(const k of ["wochenplan","ausnahmen","ferien","kontakte","abschnitte","dokumente"]) d[k] ||= [];
+  d.nanny ||= {}; d.meldung ||= {};
+  return d;
+}
+
+/* ---------- Einsatzplan berechnen ---------- */
+function schedule(fromDate, days){
+  const out = [];
+  const inFerien = s => (data.ferien||[]).find(f => f.von && f.bis && s >= f.von && s <= f.bis);
+  for(let i=0;i<days;i++){
+    const d = new Date(fromDate); d.setDate(fromDate.getDate()+i);
+    const s = iso(d);
+    const ex = (data.ausnahmen||[]).filter(a => a.datum === s);
+    const fer = inFerien(s);
+    const beforeStart = data.start && s < data.start;
+    const reg = (data.wochenplan||[]).filter(w => Number(w.tag) === d.getDay());
+    for(const w of reg){
+      if(beforeStart) continue;
+      const ausfall = ex.find(a => a.typ === "ausfall");
+      const geaendert = ex.find(a => a.typ === "geaendert");
+      if(fer && !geaendert) continue;
+      if(ausfall){ out.push({datum:s, von:w.von, bis:w.bis, notiz:ausfall.notiz, typ:"ausfall"}); continue; }
+      if(geaendert){ out.push({datum:s, von:geaendert.von||w.von, bis:geaendert.bis||w.bis, notiz:geaendert.notiz, typ:"geaendert"}); continue; }
+      out.push({datum:s, von:w.von, bis:w.bis, notiz:w.notiz, typ:"regulär"});
+    }
+    for(const a of ex.filter(a => a.typ === "zusatz")) out.push({datum:s, von:a.von, bis:a.bis, notiz:a.notiz, typ:"zusatz"});
+  }
+  return out;
+}
+
+/* ---------- Mini-Markdown ---------- */
+function md(text){
+  const lines = String(text||"").split("\n");
+  let html = "", inList = false;
+  const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>");
+  for(const raw of lines){
+    const l = raw.trimEnd();
+    if(/^\s*[-*] /.test(l)){ if(!inList){ html+="<ul>"; inList=true; } html += "<li>"+inline(l.replace(/^\s*[-*] /,""))+"</li>"; continue; }
+    if(inList){ html+="</ul>"; inList=false; }
+    if(l.startsWith("## ")) html += "<h3>"+inline(l.slice(3))+"</h3>";
+    else if(l.trim()) html += "<p>"+inline(l)+"</p>";
+  }
+  if(inList) html+="</ul>";
+  return html;
+}
+const telLink = n => n ? `<a href="tel:${esc(digits(n))}">📞 ${esc(n)}</a>` : "";
+
+/* ---------- Teilen / Senden ---------- */
+async function sendMessage(text, file){
+  if(file && navigator.canShare && navigator.canShare({files:[file]})){
+    try{ await navigator.share({files:[file], text}); return "geteilt"; }
+    catch(e){ if(e && e.name === "AbortError") return "abgebrochen"; }
+  } else if(!file && navigator.share){
+    try{ await navigator.share({text}); return "geteilt"; }
+    catch(e){ if(e && e.name === "AbortError") return "abgebrochen"; }
+  }
+  const wa = digits(data.meldung.whatsapp).replace("+","");
+  if(wa){ window.open(`https://wa.me/${wa}?text=${encodeURIComponent(text)}`, "_blank", "noopener"); return file ? "whatsapp-foto" : "whatsapp"; }
+  if(data.meldung.email){ location.href = `mailto:${data.meldung.email}?subject=${encodeURIComponent(text.split("\n")[0])}&body=${encodeURIComponent(text)}`; return file ? "mail-foto" : "mail"; }
+  return "keinziel";
+}
+
+/* ---------- Ansichten ---------- */
+function tabsList(){
+  return [["einsaetze","Einsätze"],["kontakte","Kontakte"]]
+    .concat((data.abschnitte||[]).map((a,i)=>["a"+i, a.titel||"Abschnitt"]))
+    .concat([["quittungen","Quittungen"],["angaben","Meine Angaben"],["dokumente","Dokumente"]]);
+}
+function render(){
+  if(editing) return renderEditor();
+  if(!data) return renderLogin();
+  const tabs = tabsList();
+  if(!tabs.find(t=>t[0]===view)) view = "einsaetze";
+  let body = "";
+  if(view==="einsaetze") body = viewEinsaetze();
+  else if(view==="kontakte") body = viewKontakte();
+  else if(view==="quittungen") body = viewQuittungen();
+  else if(view==="angaben") body = viewAngaben();
+  else if(view==="dokumente") body = viewDokumente();
+  else { const a = data.abschnitte[Number(view.slice(1))]; body = `<div class="card md"><h2>${esc(a.titel)}</h2>${md(a.inhalt)}</div>`; }
+  app.innerHTML = `
+    <header><h1>${esc(data.titel)}</h1><p>${esc(data.untertitel)}</p></header>
+    <nav class="tabs">${tabs.map(t=>`<button class="tab ${t[0]===view?"on":""}" data-view="${t[0]}">${esc(t[1])}</button>`).join("")}</nav>
+    ${body}
+    <footer>
+      <button class="ghost small" id="btnEdit">Inhalte bearbeiten (Familie)</button>
+      <button class="ghost small" id="btnLogout">Abmelden</button>
+    </footer>`;
+  if(view==="quittungen"){ const d = document.getElementById("qDatum"); if(d && !d.value) d.value = iso(new Date()); }
+}
+
+function viewEinsaetze(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const first = new Date(today.getFullYear(), today.getMonth(), 1);
+  let end = new Date(today.getFullYear(), 11, 31);
+  if((end - today) < 60*864e5) end = new Date(today.getFullYear(), today.getMonth()+3, 0);
+  const days = Math.round((end - first)/864e5) + 1;
+  const all = schedule(first, days);
+  const todayIso = iso(today);
+  const next = all.find(x => x.datum >= todayIso && x.typ !== "ausfall");
+  const typLabel = {"regulär":"", "zusatz":"Zusatzeinsatz", "geaendert":"Geänderte Zeit", "ausfall":"Fällt aus"};
+  const plan = (data.wochenplan||[]).map(w=>`${TAGE[w.tag]} ${esc(w.von)}–${esc(w.bis)} Uhr${w.notiz?" ("+esc(w.notiz)+")":""}`).join("<br>");
+
+  const months = [];
+  for(let m = new Date(first); m <= end; m = new Date(m.getFullYear(), m.getMonth()+1, 1)){
+    const key = m.getFullYear()+"-"+pad(m.getMonth()+1);
+    const mEnd = iso(new Date(m.getFullYear(), m.getMonth()+1, 0));
+    const items = all.filter(x => x.datum.startsWith(key));
+    const worked = items.filter(x => x.typ !== "ausfall");
+    const mins = worked.reduce((s,x)=>s+minutes(x.von,x.bis),0);
+    const fer = (data.ferien||[]).filter(f => f.von && f.bis && f.von <= mEnd && f.bis >= key+"-01");
+    const title = m.toLocaleDateString("de-CH",{month:"long",year:"numeric"});
+    months.push(`<div class="card">
+      <div class="month-head"><h2>${esc(title)}</h2><span class="muted small-text">${worked.length} Einsätze · ${fmtHours(mins)} Std.</span></div>
+      ${fer.map(f=>`<div class="note">🏖️ <strong>${esc(f.bezeichnung||"Ferien")}</strong>: ${fmtShort(f.von)}${f.von!==f.bis?" – "+fmtShort(f.bis):""} · keine Einsätze</div>`).join("")}
+      ${items.length ? items.map(x=>`<div class="day ${x.typ==="ausfall"?"cancel":""}" ${x.datum<todayIso?'style="opacity:.55"':""}>
+          <div><div class="when">${fmtDate(x.datum)}</div><div class="time muted">${esc(x.von)}–${esc(x.bis)} Uhr${x.notiz?" · "+esc(x.notiz):""}</div></div>
+          ${typLabel[x.typ]?`<span class="badge ${x.typ==="ausfall"?"off":""}">${typLabel[x.typ]}</span>`:""}</div>`).join("")
+        : '<p class="muted">Keine Einsätze in diesem Monat.</p>'}
+    </div>`);
+  }
+  return `
+    ${next ? `<div class="card next"><div class="muted">Nächster Einsatz</div><div style="font-size:1.25rem;font-weight:600">${fmtDate(next.datum)}</div><div>${esc(next.von)}–${esc(next.bis)} Uhr${next.notiz?" · "+esc(next.notiz):""}</div></div>` : ""}
+    <div class="card"><h2>Regulärer Wochenplan</h2><div>${plan||'<span class="muted">Noch nicht erfasst</span>'}</div>
+      ${data.start?`<div class="muted small-text" style="margin-top:6px">ab ${fmtDate(data.start)} · in den Schulferien und an Feiertagen keine Einsätze</div>`:""}</div>
+    ${months.join("")}`;
+}
+
+function viewKontakte(){
+  return (data.kontakte||[]).map(k=>`
+    <div class="card contact">
+      <h3>${esc(k.name||k.rolle)}</h3>
+      ${k.name&&k.rolle?`<div class="role">${esc(k.rolle)}</div>`:""}
+      <div>${k.privat?telLink(k.privat)+(k.geschaeft?'<span class="muted" style="margin-right:14px">privat</span>':""):""}
+      ${k.geschaeft?telLink(k.geschaeft)+'<span class="muted">Geschäft</span>':""}</div>
+      ${k.email?`<div><a href="mailto:${esc(k.email)}">✉️ ${esc(k.email)}</a></div>`:""}
+      ${k.notiz?`<div class="muted" style="margin-top:4px">${esc(k.notiz)}</div>`:""}
+    </div>`).join("");
+}
+
+function qHistory(){ try{ return JSON.parse(lsGet("np_q")||"[]"); }catch(e){ return []; } }
+function viewQuittungen(){
+  const hist = qHistory();
+  const thisMonth = iso(new Date()).slice(0,7);
+  const sum = hist.filter(h=>h.datum.startsWith(thisMonth)).reduce((s,h)=>s+Number(h.betrag||0),0);
+  return `
+    <div class="card"><h2>Quittung einreichen</h2>
+      <p class="muted small-text">Für Einkäufe, die du für uns machst. Foto der Quittung aufnehmen, Betrag eintragen und senden – wir erstatten den Betrag.</p>
+      <form id="qForm">
+        <div class="grid">
+          <div><label for="qDatum">Datum</label><input type="date" id="qDatum" required></div>
+          <div><label for="qBetrag">Betrag CHF</label><input type="number" id="qBetrag" step="0.05" min="0" inputmode="decimal" required></div>
+        </div>
+        <label for="qZweck">Wofür / Geschäft</label><input id="qZweck" placeholder="z.B. Migros, Zvieri" required>
+        <label for="qFoto">Foto der Quittung</label><input type="file" id="qFoto" accept="image/*,application/pdf" capture="environment">
+        <div class="ok" id="qMsg"></div>
+        <button type="submit" style="width:100%">Quittung senden</button>
+      </form>
+    </div>
+    <div class="card"><h2>Von diesem Gerät gesendet</h2>
+      ${hist.length ? `<div class="muted small-text">Diesen Monat: CHF ${sum.toFixed(2)}</div>` + hist.slice().reverse().slice(0,20).map(h=>`
+        <div class="day"><div><div class="when">${esc(h.zweck)}</div><div class="muted small-text">${fmtShort(h.datum)}</div></div><div>CHF ${Number(h.betrag).toFixed(2)}</div></div>`).join("")
+      : '<p class="muted">Noch keine Quittungen gesendet.</p>'}
+    </div>`;
+}
+
+function viewAngaben(){
+  const n = data.nanny;
+  if(editMine){
+    return `<div class="card"><h2>Meine Angaben ändern</h2>
+      <p class="muted small-text">Passe an, was sich geändert hat, und sende es uns. Wir übernehmen die Änderung in die Seite.</p>
+      <form id="mineForm">
+        ${NANNY_FIELDS.map(f=>`<label>${f.l}</label><input data-mine="${f.k}" value="${esc(n[f.k])}">`).join("")}
+        <label>Bemerkung</label><input data-mine="_bemerkung" value="">
+        <div class="ok" id="mineMsg"></div>
+        <div class="row" style="margin-top:8px"><button type="submit">Änderungen senden</button><button type="button" class="ghost" id="btnMineCancel">Abbrechen</button></div>
+      </form></div>`;
+  }
+  return `<div class="card"><h2>Meine Angaben</h2>
+    <div class="kv">${NANNY_FIELDS.map(f=>`<div>${f.l}</div><div>${esc(n[f.k]||"–")}</div>`).join("")}</div>
+    <div class="row" style="margin-top:12px"><button id="btnMineEdit">Angaben ändern</button></div>
+  </div>`;
+}
+
+function viewDokumente(){
+  const docs = data.dokumente||[];
+  return `<div class="card"><h2>Dokumente</h2>${docs.length ? docs.map((d,i)=>`
+    <div class="day"><div>${esc(d.name)}</div><button class="small" data-open="${i}">Öffnen</button></div>`).join("") : '<p class="muted">Noch keine Dokumente.</p>'}</div>`;
+}
+
+function openDoc(i){
+  const d = data.dokumente[i];
+  const blob = new Blob([fromB64(d.data)], {type:d.typ||"application/octet-stream"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.target = "_blank"; a.rel = "noopener";
+  if(!(d.typ==="application/pdf" || (d.typ||"").startsWith("image/"))) a.download = d.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 60000);
+}
+
+/* ---------- Login ---------- */
+function renderLogin(){
+  if(!encFile){
+    app.innerHTML = `<div class="center"><div class="card login">
+      <h2>Noch nicht eingerichtet</h2>
+      <p class="muted">Es gibt noch keine Datei <code>${DATA_FILE}</code>. Richte die Inhalte ein, lege ein Passwort fest und lade die erzeugte Datei auf GitHub hoch.</p>
+      <button id="btnSetup">Jetzt einrichten</button></div></div>`;
+    return;
+  }
+  app.innerHTML = `<div class="center"><form class="card login" id="loginForm">
+    <h2>Anmelden</h2>
+    <label for="pw">Passwort</label>
+    <input id="pw" type="password" autocomplete="current-password" autofocus>
+    <label class="row" style="color:var(--ink)"><input type="checkbox" id="remember" style="width:auto"> Auf diesem Gerät angemeldet bleiben</label>
+    <div class="err" id="err"></div>
+    <button type="submit" style="width:100%">Öffnen</button>
+  </form></div>`;
+}
+
+async function tryLogin(pw, remember){
+  const err = document.getElementById("err");
+  if(err) err.textContent = "Wird entschlüsselt …";
+  try{
+    data = normalize(await decryptData(encFile, pw));
+    password = pw;
+    lsSet("np_pw", remember ? pw : null);
+    render();
+  }catch(e){
+    data = null;
+    lsSet("np_pw", null);
+    if(err) err.textContent = "Passwort falsch.";
+  }
+}
+
+/* ---------- Editor (Familie) ---------- */
+const FIELDS = {
+  wochenplan: [{k:"tag",l:"Tag",t:"select",o:[1,2,3,4,5,6,0].map(n=>[n,TAGE[n]])},{k:"von",l:"Von",t:"time"},{k:"bis",l:"Bis",t:"time"},{k:"notiz",l:"Notiz"}],
+  ausnahmen: [{k:"datum",l:"Datum",t:"date"},{k:"typ",l:"Art",t:"select",o:[["zusatz","Zusatzeinsatz"],["ausfall","Fällt aus"],["geaendert","Geänderte Zeit"]]},{k:"von",l:"Von",t:"time"},{k:"bis",l:"Bis",t:"time"},{k:"notiz",l:"Notiz"}],
+  ferien: [{k:"von",l:"Von",t:"date"},{k:"bis",l:"Bis",t:"date"},{k:"bezeichnung",l:"Bezeichnung"}],
+  kontakte: [{k:"name",l:"Name"},{k:"rolle",l:"Rolle"},{k:"privat",l:"Tel. privat"},{k:"geschaeft",l:"Tel. Geschäft"},{k:"email",l:"E-Mail"},{k:"notiz",l:"Notiz (z.B. Arbeitgeber)"}],
+  abschnitte: [{k:"titel",l:"Titel"},{k:"inhalt",l:"Inhalt (## Überschrift, - Aufzählung, **fett**)",t:"textarea"}]
+};
+const BLANK = {
+  wochenplan:{tag:1,von:"",bis:"",notiz:""}, ausnahmen:{datum:"",typ:"zusatz",von:"",bis:"",notiz:""},
+  ferien:{von:"",bis:"",bezeichnung:""}, kontakte:{name:"",rolle:"",privat:"",geschaeft:"",email:"",notiz:""},
+  abschnitte:{titel:"Neuer Abschnitt",inhalt:""}
+};
+
+function input(f, val, attrs){
+  if(f.t==="select") return `<select ${attrs}>${f.o.map(([v,l])=>`<option value="${v}" ${String(v)===String(val)?"selected":""}>${esc(l)}</option>`).join("")}</select>`;
+  if(f.t==="textarea") return `<textarea ${attrs}>${esc(val)}</textarea>`;
+  return `<input type="${f.t||"text"}" value="${esc(val)}" ${attrs}>`;
+}
+function listEditor(key, title, hint){
+  const fields = FIELDS[key];
+  const wide = key==="abschnitte";
+  return `<div class="card"><h2>${title}</h2>${hint?`<p class="muted small-text">${hint}</p>`:""}
+    ${(data[key]||[]).map((item,i)=>`<div class="edit-item"><div class="${wide?"":"grid"}">
+      ${fields.map(f=>`<div><label>${f.l}</label>${input(f,item[f.k],`data-list="${key}" data-i="${i}" data-k="${f.k}"`)}</div>`).join("")}
+      </div><div class="row" style="margin-top:8px;justify-content:flex-end"><button class="danger small" data-del="${key}" data-i="${i}">Entfernen</button></div></div>`).join("")}
+    <button class="ghost small" data-add="${key}">+ Hinzufügen</button></div>`;
+}
+function objEditor(key, title, fields, hint){
+  return `<div class="card"><h2>${title}</h2>${hint?`<p class="muted small-text">${hint}</p>`:""}
+    <div class="grid">${fields.map(f=>`<div><label>${f.l}</label><input data-obj="${key}" data-k="${f.k}" value="${esc(data[key][f.k])}"></div>`).join("")}</div></div>`;
+}
+
+function renderEditor(){
+  app.innerHTML = `
+    <header><h1>Inhalte bearbeiten</h1><p>Änderungen werden erst wirksam, wenn du die verschlüsselte Datei exportierst und auf GitHub hochlädst.</p></header>
+    <div class="card"><h2>Allgemein</h2>
+      <label>Titel</label><input data-field="titel" value="${esc(data.titel)}">
+      <label>Untertitel</label><input data-field="untertitel" value="${esc(data.untertitel)}">
+      <label>Startdatum der Anstellung</label><input type="date" data-field="start" value="${esc(data.start)}">
+    </div>
+    ${listEditor("wochenplan","Regulärer Wochenplan")}
+    ${listEditor("ausnahmen","Ausnahmen","Zusatzeinsätze, ausfallende Einsätze oder geänderte Zeiten an einem bestimmten Datum.")}
+    ${listEditor("ferien","Ferien & Feiertage (keine Einsätze)","In diesen Zeiträumen fallen die regulären Einsätze weg (Zusatzeinsätze werden trotzdem angezeigt).")}
+    ${listEditor("kontakte","Kontakte")}
+    ${listEditor("abschnitte","Abschnitte","Jeder Abschnitt erscheint als eigener Reiter.")}
+    ${objEditor("nanny","Angaben der Nanny",NANNY_FIELDS)}
+    ${objEditor("meldung","Empfänger für Quittungen und Änderungen",MELDUNG_FIELDS,"Quittungen und geänderte Angaben werden an diese Nummer bzw. Adresse gesendet.")}
+    <div class="card"><h2>Dokumente</h2>
+      ${(data.dokumente||[]).map((d,i)=>`<div class="day"><div>${esc(d.name)} <span class="muted">(${Math.round(d.data.length*0.75/1024)} KB)</span></div><button class="danger small" data-deldoc="${i}">Entfernen</button></div>`).join("") || '<p class="muted">Noch keine Dokumente.</p>'}
+      <label>PDF oder Bild hinzufügen (z.B. Arbeitsvertrag, Police, Notfallermächtigung)</label>
+      <input type="file" id="fileIn" multiple accept="application/pdf,image/*">
+    </div>
+    <div class="card"><h2>Passwort &amp; Export</h2>
+      <label>${setupMode?"Passwort festlegen":"Neues Passwort (leer lassen = bisheriges behalten)"}</label>
+      <input type="password" id="pw1" autocomplete="new-password">
+      <label>Passwort wiederholen</label>
+      <input type="password" id="pw2" autocomplete="new-password">
+      <p class="muted small-text">Mindestens 12 Zeichen, nicht anderswo verwendet.</p>
+      <div class="err" id="exErr"></div>
+      <div class="row">
+        <button id="btnExport">Verschlüsselt exportieren</button>
+        ${setupMode?"":'<button class="ghost" id="btnPreview">Vorschau</button>'}
+      </div>
+    </div>`;
+}
+
+async function doExport(){
+  const err = document.getElementById("exErr");
+  const p1 = document.getElementById("pw1").value, p2 = document.getElementById("pw2").value;
+  let pw = password;
+  if(p1 || setupMode){
+    if(p1.length < 12){ err.textContent = "Das Passwort muss mindestens 12 Zeichen haben."; return; }
+    if(p1 !== p2){ err.textContent = "Die Passwörter stimmen nicht überein."; return; }
+    pw = p1;
+  }
+  err.textContent = "Wird verschlüsselt …";
+  const file = await encryptData(data, pw);
+  const blob = new Blob([JSON.stringify(file)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = DATA_FILE;
+  document.body.appendChild(a); a.click(); a.remove();
+  password = pw; encFile = file; setupMode = false;
+  if(lsGet("np_pw")) lsSet("np_pw", pw);
+  err.style.color = "var(--accent)";
+  err.textContent = `Die Datei ${DATA_FILE} wurde heruntergeladen. Lade sie jetzt auf GitHub hoch und ersetze die bisherige Datei.`;
+}
+
+/* ---------- Ereignisse ---------- */
+app.addEventListener("click", e => {
+  const t = e.target.closest("button"); if(!t || t.type === "submit") return;
+  if(t.dataset.view){ view = t.dataset.view; editMine = false; render(); window.scrollTo(0,0); }
+  else if(t.dataset.open!==undefined) openDoc(Number(t.dataset.open));
+  else if(t.id==="btnEdit"){ editing = true; render(); window.scrollTo(0,0); }
+  else if(t.id==="btnPreview"){ editing = false; render(); window.scrollTo(0,0); }
+  else if(t.id==="btnLogout"){ lsSet("np_pw", null); data = null; password = null; render(); }
+  else if(t.id==="btnSetup"){ data = normalize(template()); setupMode = true; editing = true; render(); }
+  else if(t.id==="btnExport") doExport();
+  else if(t.id==="btnMineEdit"){ editMine = true; render(); }
+  else if(t.id==="btnMineCancel"){ editMine = false; render(); }
+  else if(t.dataset.add){ (data[t.dataset.add] ||= []).push({...BLANK[t.dataset.add]}); render(); }
+  else if(t.dataset.del){ data[t.dataset.del].splice(Number(t.dataset.i),1); render(); }
+  else if(t.dataset.deldoc!==undefined){ data.dokumente.splice(Number(t.dataset.deldoc),1); render(); }
+});
+app.addEventListener("input", e => {
+  const el = e.target;
+  if(el.dataset.field) data[el.dataset.field] = el.value;
+  else if(el.dataset.obj) data[el.dataset.obj][el.dataset.k] = el.value;
+  else if(el.dataset.list){
+    const v = el.dataset.k==="tag" ? Number(el.value) : el.value;
+    data[el.dataset.list][Number(el.dataset.i)][el.dataset.k] = v;
+  }
+});
+app.addEventListener("change", e => {
+  if(e.target.id !== "fileIn") return;
+  const files = [...e.target.files];
+  let pending = files.length;
+  for(const f of files){
+    if(f.size > 15*1024*1024){ alert(f.name+" ist grösser als 15 MB."); if(--pending===0) render(); continue; }
+    const r = new FileReader();
+    r.onload = () => { data.dokumente.push({name:f.name, typ:f.type, data:String(r.result).split(",")[1]}); if(--pending===0) render(); };
+    r.readAsDataURL(f);
+  }
+});
+app.addEventListener("submit", async e => {
+  e.preventDefault();
+  const id = e.target.id;
+  if(id === "loginForm"){
+    tryLogin(document.getElementById("pw").value, document.getElementById("remember").checked);
+  }
+  else if(id === "qForm"){
+    const datum = document.getElementById("qDatum").value;
+    const betrag = Number(document.getElementById("qBetrag").value || 0);
+    const zweck = document.getElementById("qZweck").value.trim();
+    const file = document.getElementById("qFoto").files[0] || null;
+    const msg = document.getElementById("qMsg");
+    const text = `Quittung ${fmtShort(datum)}\nCHF ${betrag.toFixed(2)} – ${zweck}\n(${data.nanny.name||"Nanny"})`;
+    const res = await sendMessage(text, file);
+    if(res === "abgebrochen"){ msg.textContent = ""; return; }
+    if(res === "keinziel"){ msg.className = "err"; msg.textContent = "Kein Empfänger hinterlegt – bitte der Familie melden."; return; }
+    const hist = qHistory(); hist.push({datum, betrag, zweck}); lsSet("np_q", JSON.stringify(hist.slice(-100)));
+    render();
+    const m2 = document.getElementById("qMsg");
+    if(m2) m2.textContent = (res==="whatsapp-foto"||res==="mail-foto") ? "Text vorbereitet – bitte das Foto im Chat bzw. in der E-Mail noch anhängen." : "Gesendet. Danke!";
+  }
+  else if(id === "mineForm"){
+    const changes = [];
+    let bemerkung = "";
+    e.target.querySelectorAll("[data-mine]").forEach(el => {
+      const k = el.dataset.mine, v = el.value.trim();
+      if(k === "_bemerkung"){ bemerkung = v; return; }
+      if(v !== String(data.nanny[k]||"").trim()){
+        const f = NANNY_FIELDS.find(x=>x.k===k);
+        changes.push(`${f.l}: ${v||"(leer)"}`);
+      }
+    });
+    const msg = document.getElementById("mineMsg");
+    if(!changes.length && !bemerkung){ msg.className = "err"; msg.textContent = "Es wurde nichts geändert."; return; }
+    const text = `Änderung meiner Angaben (${data.nanny.name||"Nanny"})\n` + changes.join("\n") + (bemerkung ? `\nBemerkung: ${bemerkung}` : "");
+    const res = await sendMessage(text, null);
+    if(res === "abgebrochen") return;
+    if(res === "keinziel"){ msg.className = "err"; msg.textContent = "Kein Empfänger hinterlegt – bitte der Familie direkt melden."; return; }
+    msg.className = "ok"; msg.textContent = "Gesendet. Wir passen die Angaben an – danke!";
+  }
+});
+
+/* ---------- Start ---------- */
+(async function init(){
+  try{
+    const r = await fetch(DATA_FILE, {cache:"no-store"});
+    if(r.ok) encFile = await r.json();
+  }catch(e){ encFile = null; }
+  render();
+  const saved = lsGet("np_pw");
+  if(encFile && saved) tryLogin(saved, true);
+})();
+</script>
+</body>
+</html>
